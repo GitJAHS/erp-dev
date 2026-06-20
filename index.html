@@ -775,8 +775,17 @@ function googleSignOut() {
     googleToken = null;
     sessionStorage.removeItem('erp_google_token');
     updateSyncStatus('Offline');
-    // Unlock field so user can enter new key if needed
-    unlockClientIdField();
+    // Clear encrypted key and in-memory plaintext
+    DB._data.config.settings.googleClientId = '';
+    localStorage.removeItem('erp_encrypted_clientId');
+    // Clear and unlock field
+    const field = document.getElementById('googleClientIdField');
+    if (field) {
+        field.value = '';
+        field.classList.remove('api-key-locked');
+        field.readOnly = false;
+        field.placeholder = 'Paste your OAuth 2.0 Client ID';
+    }
     initGoogleButton();
     toast('Disconnected from Google Drive');
 }
