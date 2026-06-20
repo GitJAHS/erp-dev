@@ -138,7 +138,13 @@
         .uptime-widget { font-size: 0.75rem; color: var(--md-on-surface-variant); line-height: 1.3; display: flex; flex-direction: column; align-items: flex-end; white-space: nowrap; cursor: default; transition: color 0.3s; }
         .uptime-widget:hover { color: var(--md-on-surface); }
         .uptime-widget span { font-family: 'Segoe UI', monospace; letter-spacing: 0.02em; }
-        .api-key-locked { filter: blur(4px); user-select: none; pointer-events: none; background: var(--md-sys-color-surface-container-high); opacity: 0.7; }
+        .api-key-locked {
+            filter: blur(4px);
+            user-select: none;
+            cursor: not-allowed !important;
+            background: var(--md-sys-color-surface-container-high);
+            opacity: 0.7;
+        }
     </style>
 </head>
 <body>
@@ -335,9 +341,46 @@ let syncTimer=null;
 function debouncedSyncToDrive() { if(!googleToken) return; if(syncTimer) clearTimeout(syncTimer); syncTimer=setTimeout(()=>saveToDrive().catch(e=>console.error(e)),2000); }
 function syncNow() { if(!googleToken){ toast('Sign in with Google first (Settings page)'); return; } updateSyncStatus('Syncing...'); saveToDrive().then(()=>{ updateSyncStatus('Online'); toast('Sync completed'); }).catch(()=>{ updateSyncStatus('Error'); toast('Sync failed'); }); }
 async function googleSignIn() { const clientIdField=document.getElementById('googleClientIdField'); if(!clientIdField) return; const clientId=clientIdField.value.trim(); if(!clientId){ toast('Please enter your Google Client ID first'); return; } await saveEncryptedClientId(clientId); lockClientIdField(); const client=google.accounts.oauth2.initTokenClient({ client_id:clientId, scope:'https://www.googleapis.com/auth/drive.file', callback:(tokenResponse)=>{ if(tokenResponse.error){ toast('Google sign-in failed: '+tokenResponse.error); return; } googleToken=tokenResponse.access_token; sessionStorage.setItem('erp_google_token',googleToken); updateSyncStatus('Online'); toast('Google Drive connected!'); initGoogleButton(); loadFromDrive(); } }); client.requestAccessToken(); }
-function googleSignOut() { googleToken=null; sessionStorage.removeItem('erp_google_token'); updateSyncStatus('Offline'); DB._data.config.settings.googleClientId=''; localStorage.removeItem('erp_encrypted_clientId'); const field=document.getElementById('googleClientIdField'); if(field){ field.value=''; field.classList.remove('api-key-locked'); field.readOnly=false; field.placeholder='Paste your OAuth 2.0 Client ID'; } initGoogleButton(); toast('Disconnected from Google Drive'); }
-function lockClientIdField() { const field=document.getElementById('googleClientIdField'); if(field){ field.classList.add('api-key-locked'); field.readOnly=true; field.placeholder='🔒 Client ID encrypted & locked'; } }
-function unlockClientIdField() { const field=document.getElementById('googleClientIdField'); if(field){ field.classList.remove('api-key-locked'); field.readOnly=false; field.placeholder='Paste your OAuth 2.0 Client ID'; } }
+function googleSignOut() { googleToken=null; sessionStorage.removeItem('erp_google_token'); updateSyncStatus('Offline'); DB._data.config.settings.googleClientId=''; localStorage.removeItem('erp_encrypted_clientId'); const field=document.getElementById('googleClientIdField'); if(field){ field.value=''; unlockClientIdField(); } initGoogleButton(); toast('Disconnected from Google Drive'); }
+
+// FIX: Lock and unlock functions with blocked cursor and copy prevention
+function lockClientIdField() {
+    const field = document.getElementById('googleClientIdField');
+    if (field) {
+        field.classList.add('api-key-locked');
+        field.readOnly = true;
+        field.placeholder = '🔒 Client ID encrypted & locked';
+        field.tabIndex = -1;
+        field._lockListeners = {
+            copy: (e) => e.preventDefault(),
+            cut: (e) => e.preventDefault(),
+            paste: (e) => e.preventDefault(),
+            contextmenu: (e) => e.preventDefault(),
+            mousedown: (e) => e.preventDefault(),
+            selectstart: (e) => e.preventDefault()
+        };
+        Object.keys(field._lockListeners).forEach(evt => {
+            field.addEventListener(evt, field._lockListeners[evt]);
+        });
+    }
+}
+
+function unlockClientIdField() {
+    const field = document.getElementById('googleClientIdField');
+    if (field) {
+        field.classList.remove('api-key-locked');
+        field.readOnly = false;
+        field.placeholder = 'Paste your OAuth 2.0 Client ID';
+        field.tabIndex = 0;
+        if (field._lockListeners) {
+            Object.keys(field._lockListeners).forEach(evt => {
+                field.removeEventListener(evt, field._lockListeners[evt]);
+            });
+            delete field._lockListeners;
+        }
+    }
+}
+
 function initGoogleButton() { const btn=document.getElementById('googleSignInBtn'); if(!btn) return; if(googleToken){ btn.textContent='✅ Connected to Google Drive'; btn.classList.remove('btn-outlined'); btn.classList.add('btn-filled'); btn.onclick=googleSignOut; updateSyncStatus('Online'); lockClientIdField(); } else { btn.textContent='G  Sign in with Google'; btn.classList.remove('btn-filled'); btn.classList.add('btn-outlined'); btn.onclick=googleSignIn; unlockClientIdField(); } }
 function signOut() { if(googleToken) googleSignOut(); else toast('Already signed out'); }
 
