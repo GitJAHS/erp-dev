@@ -657,11 +657,8 @@ function syncNow() {
 }
 
 async function googleSignIn() {
-    if (!auth.loggedIn) {
-        toast('Please login to Sync Settings first.');
-        return;
-    }
-    const clientId = await decryptClientId();
+    const clientIdField = document.getElementById('googleClientIdField');
+    const clientId = clientIdField ? clientIdField.value.trim() : DB._data.config.settings.googleClientId;
     if (!clientId) { toast('Please enter your Google Client ID in the field above first'); return; }
     const client = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
@@ -670,6 +667,8 @@ async function googleSignIn() {
             if (tokenResponse.error) { toast('Google sign-in failed: ' + tokenResponse.error); return; }
             googleToken = tokenResponse.access_token;
             sessionStorage.setItem('erp_google_token', googleToken);
+            DB._data.config.settings.googleClientId = clientId;
+            DB.save();
             updateSyncStatus('Online');
             toast('Google Drive connected!');
             initGoogleButton();
@@ -1109,7 +1108,7 @@ function renderReports(){const totalSales=DB._data.sales.reduce((s,sl)=>s+sl.tot
 function drawReportPieChart(){const canvas=document.getElementById('reportPieChart');if(!canvas)return;if (!canvas.offsetParent) { requestAnimationFrame(drawReportPieChart); return; }const ctx=canvas.getContext('2d');const dpr=window.devicePixelRatio||1;const rect=canvas.parentElement.getBoundingClientRect();canvas.width=rect.width*dpr;canvas.height=300*dpr;canvas.style.width=rect.width+'px';canvas.style.height='300px';ctx.scale(dpr,dpr);const revenue=DB._data.sales.reduce((s,sl)=>s+sl.totalAmount,0);const expenses=DB._data.finance.expenses.reduce((s,e)=>s+e.amount,0);const profit=Math.max(0,revenue-expenses);const primary=getComputedStyle(document.body).getPropertyValue('--md-primary').trim()||'#6750A4';const secondary=getComputedStyle(document.body).getPropertyValue('--md-secondary').trim()||'#625B71';const tertiary=getComputedStyle(document.body).getPropertyValue('--md-tertiary').trim()||'#7D5260';const data=[{label:'Revenue',value:revenue,color:primary},{label:'Expenses',value:expenses,color:tertiary},{label:'Net Profit',value:profit,color:secondary}];const total=data.reduce((s,d)=>s+d.value,0)||1;let startAngle=-Math.PI/2;const cx=rect.width/2,cy=140,radius=90;data.forEach(d=>{const sliceAngle=(d.value/total)*2*Math.PI;ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,radius,startAngle,startAngle+sliceAngle);ctx.closePath();ctx.fillStyle=d.color;ctx.fill();ctx.strokeStyle=getComputedStyle(document.body).getPropertyValue('--md-surface').trim()||'#fff';ctx.lineWidth=2;ctx.stroke();startAngle+=sliceAngle;});let legendY=260;data.forEach(d=>{const percent=((d.value/total)*100).toFixed(1);ctx.fillStyle=d.color;ctx.fillRect(20,legendY,15,15);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--md-on-surface').trim()||'#1C1B1F';ctx.font='14px Segoe UI';ctx.textAlign='left';ctx.fillText(`${d.label}: ${percent}% (${DB.fmtMoney(d.value)})`,42,legendY+13);legendY+=25;});}
 function generateReport(){const report={id:DB.uid('RPT'),type:'daily',data:{totalSales:DB._data.sales.reduce((s,sl)=>s+sl.totalAmount,0),totalProfit:DB._data.sales.reduce((s,sl)=>s+sl.profit,0),totalExpense:DB._data.finance.expenses.reduce((s,e)=>s+e.amount,0)},generatedAt:DB.now()};DB._data.reports.push(report);addAudit('create', `Report ${report.id} generated`);DB.save();navigate('reports');toast('Report generated');updateAlertBadge();}
 function renderSettings(){const cfg=DB._data.config;return`<div class="card"><div class="card-header"><h3>System Configuration</h3></div><form id="settingsForm"><div class="form-grid-2"><div class="field"><label>Company Name</label><input name="companyName" value="${escapeHtml(cfg.company?.name||'')}"></div><div class="field"><label>Address</label><input name="companyAddress" value="${escapeHtml(cfg.company?.address||'')}"></div><div class="field"><label>Phone</label><input name="companyPhone" value="${escapeHtml(cfg.company?.phone||'')}"></div><div class="field"><label>Currency (e.g. USD, BDT, ₹)</label><input name="currency" value="${cfg.currency}"></div><div class="field"><label>Country</label><input name="country" value="${escapeHtml(cfg.country||'')}"></div><div class="field"><label>Theme</label><select name="themeMode"><option value="light" ${cfg.theme?.mode==='light'?'selected':''}>Light</option><option value="dark" ${cfg.theme?.mode==='dark'?'selected':''}>Dark</option></select></div><div class="field"><label>Accent Color</label><input name="accentColor" type="color" value="${cfg.theme?.accentColor||'#6750A4'}"></div></div><button type="submit" class="btn btn-filled mt-4">Save Settings</button></form></div><div class="card mt-4"><div class="card-header"><h3><span class="material-symbols-rounded">folder_open</span> Import / Export System Data</h3></div><div class="flex-between" style="gap:12px;flex-wrap:wrap;"><button class="btn btn-filled" id="exportDataBtn"><span class="material-symbols-rounded">download</span> Export All Data (JSON)</button><button class="btn btn-outlined" id="importDataBtn"><span class="material-symbols-rounded">upload</span> Import Data</button><input type="file" id="importFileInput" accept=".json" style="display:none;" onchange="window._handleImportFile(this)"></div><p style="font-size:0.75rem;color:var(--md-on-surface-variant);margin-top:8px;">Data is saved in your browser's localStorage.</p></div><div class="card mt-4"><div class="card-header"><h3><span class="material-symbols-rounded">cloud_sync</span> Google Drive Sync</h3></div><div id="googleSyncCardContent"></div></div><div class="card mt-4"><div class="card-header"><h3><span class="material-symbols-rounded">delete_forever</span> Data Management</h3></div><button class="btn btn-danger" id="clearDataBtn"><span class="material-symbols-rounded">delete_forever</span> Move All Data to Trash</button><p style="font-size:0.75rem;color:var(--md-on-surface-variant);margin-top:8px;">This will move all ERP data to the trash bin. You can restore or permanently delete from there.</p></div>`;}
-function saveSettings(e){e.preventDefault();const f=document.getElementById('settingsForm'),fd=new FormData(f);DB._data.config.company={name:fd.get('companyName'),address:fd.get('companyAddress'),phone:fd.get('companyPhone')};DB._data.config.currency=fd.get('currency')||'USD';DB._data.config.country=fd.get('country')||'';DB._data.config.theme={mode:fd.get('themeMode'),accentColor:fd.get('accentColor')};const googleClientIdField = document.getElementById('googleClientIdField');if (googleClientIdField && auth.loggedIn) { const newClientId = googleClientIdField.value.trim(); encryptAndStoreClientId(newClientId); } DB.save(); DB._applyTheme(); toast('Settings saved'); updateAlertBadge(); }
+function saveSettings(e){e.preventDefault();const f=document.getElementById('settingsForm'),fd=new FormData(f);DB._data.config.company={name:fd.get('companyName'),address:fd.get('companyAddress'),phone:fd.get('companyPhone')};DB._data.config.currency=fd.get('currency')||'USD';DB._data.config.country=fd.get('country')||'';DB._data.config.theme={mode:fd.get('themeMode'),accentColor:fd.get('accentColor')};const googleClientIdField = document.getElementById('googleClientIdField');if (googleClientIdField) { DB._data.config.settings.googleClientId = googleClientIdField.value.trim(); } DB.save(); DB._applyTheme(); toast('Settings saved'); updateAlertBadge(); }
 function exportAllData(){const profiles = getProfiles();const data = {};profiles.forEach(p => {const profileData = {};Object.keys(DB._data).forEach(k => {const raw = localStorage.getItem('erp_' + p.id + '_' + k);profileData[k] = raw ? JSON.parse(raw) : (k === 'finance' ? {income:[],expenses:[]} : (k === 'config' ? null : []));});data[p.id] = profileData;});const exportObj = { version: 1, profiles: profiles, data: data, activeProfileId: activeProfileId };const blob = new Blob([JSON.stringify(exportObj, null, 2)], {type:'application/json'});const url = URL.createObjectURL(blob);const a = document.createElement('a');a.href = url;a.download = 'erp_backup_' + new Date().toISOString().slice(0,10) + '.json';a.click();URL.revokeObjectURL(url);toast('All profiles exported successfully');}
 function importAllData(file){const reader = new FileReader();reader.onload = function(e){try {const imported = JSON.parse(e.target.result);if (confirm('This will overwrite all current data. Continue?')) {Object.keys(localStorage).forEach(key => {if (key.startsWith('erp_') || key === 'erp_profiles' || key === 'erp_activeProfileId') {localStorage.removeItem(key);}});if (imported.profiles && imported.data && imported.activeProfileId) {saveProfiles(imported.profiles);Object.keys(imported.data).forEach(profileId => {const profileData = imported.data[profileId];Object.keys(profileData).forEach(k => {localStorage.setItem('erp_' + profileId + '_' + k, JSON.stringify(profileData[k]));});});activeProfileId = imported.activeProfileId;localStorage.setItem('erp_activeProfileId', activeProfileId);} else {if (!activeProfileId) {const defaultProf = createProfile('Default Business');activeProfileId = defaultProf.id;localStorage.setItem('erp_activeProfileId', activeProfileId);}Object.keys(imported).forEach(k => {if (DB._data.hasOwnProperty(k)) {localStorage.setItem('erp_' + activeProfileId + '_' + k, JSON.stringify(imported[k]));}});}toast('Data imported successfully! Reloading...');setTimeout(() => { location.reload(); }, 1000);}} catch(err) {toast('Invalid file format');}};reader.readAsText(file);}
 window._handleImportFile=function(input){const file=input.files[0];if(file)importAllData(file);input.value='';};
@@ -1287,7 +1286,7 @@ function updateUptime() {
 
 window.addEventListener('resize',()=>{if(currentPanel==='products')drawInventoryChart();if(currentPanel==='reports')drawReportPieChart();});
 
-// ==================== AUTH & ENCRYPTION ====================
+// ==================== AUTH & ENCRYPTION (UNUSED NOW - SIGN UP / LOGIN REMOVED) ====================
 const auth = {
     loggedIn: false,
     username: '',
@@ -1394,49 +1393,13 @@ function logoutAuth() {
 function renderGoogleSyncCard() {
     const container = document.getElementById('googleSyncCardContent');
     if (!container) return;
-    if (auth.loggedIn) {
-        (async () => {
-            try {
-                const clientId = await decryptClientId();
-                container.innerHTML = `
-                    <div class="field mb-4"><label>Google Client ID</label><input name="googleClientId" id="googleClientIdField" value="${escapeHtml(clientId)}" placeholder="Paste your OAuth 2.0 Client ID"><small>Get one at console.cloud.google.com → Web application</small></div>
-                    <button type="button" class="btn btn-outlined" id="googleSignInBtn" style="width:100%;">G  Sign in with Google</button>
-                    <p style="font-size:0.75rem;color:var(--md-on-surface-variant);margin-top:8px;">After signing in, your data will sync to Google Drive automatically.</p>
-                    <div class="flex-between mt-4"><span class="badge badge-green">🔒 Secured by ${escapeHtml(auth.username)}</span><button class="btn btn-sm btn-outlined" id="logoutAuthBtn">Logout</button></div>
-                `;
-                document.getElementById('logoutAuthBtn').onclick = logoutAuth;
-                initGoogleButton();
-                if (googleToken) updateSyncStatus('Online');
-            } catch(e) {
-                toast('Error loading sync settings.');
-                console.error(e);
-            }
-        })();
-    } else {
-        const existing = JSON.parse(localStorage.getItem('erp_auth') || '{}');
-        const hasAccount = !!existing.username;
-        container.innerHTML = `
-            <div class="field mb-4"><label>Username</label><input id="authUsername" placeholder="Username"></div>
-            <div class="field mb-4"><label>Password</label><input id="authPassword" type="password" placeholder="Password"></div>
-            <div class="flex-between">
-                <button class="btn btn-filled" id="authLoginBtn">Login</button>
-                ${!hasAccount ? '<button class="btn btn-outlined" id="authSignupBtn">Sign Up</button>' : ''}
-            </div>
-            <p style="font-size:0.7rem;color:var(--md-error);margin-top:8px;">⚠️ If you forget your password, your Google Client ID cannot be recovered.</p>
-        `;
-        document.getElementById('authLoginBtn').onclick = () => {
-            const u = document.getElementById('authUsername').value.trim();
-            const p = document.getElementById('authPassword').value;
-            login(u, p);
-        };
-        if (!hasAccount) {
-            document.getElementById('authSignupBtn').onclick = () => {
-                const u = document.getElementById('authUsername').value.trim();
-                const p = document.getElementById('authPassword').value;
-                signup(u, p).then(() => renderGoogleSyncCard());
-            };
-        }
-    }
+    const clientId = DB._data.config.settings.googleClientId || '';
+    container.innerHTML = `
+        <div class="field mb-4"><label>Google Client ID</label><input name="googleClientId" id="googleClientIdField" value="${escapeHtml(clientId)}" placeholder="Paste your OAuth 2.0 Client ID"><small>Get one at console.cloud.google.com → Web application</small></div>
+        <button type="button" class="btn btn-outlined" id="googleSignInBtn" style="width:100%;">G  Sign in with Google</button>
+        <p style="font-size:0.75rem;color:var(--md-on-surface-variant);margin-top:8px;">After signing in, your data will sync to Google Drive automatically.</p>
+    `;
+    initGoogleButton();
 }
 
 function init(){
